@@ -18,6 +18,7 @@
           name: 'livedoor_news',
         },
       },
+      random_seed: [0, 1, 2, 3, 4],
     },
   },
 }

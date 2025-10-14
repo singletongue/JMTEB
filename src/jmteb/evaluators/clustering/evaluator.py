@@ -39,7 +39,7 @@ class ClusteringEvaluator(EmbeddingEvaluator):
         val_dataset: ClusteringDataset,
         test_dataset: ClusteringDataset,
         prefix: str | None = None,
-        random_seed: int | None = None,
+        random_seed: int | list[int] | None = None,
         log_predictions: bool = False,
         encode_kwargs: dict = {},
     ) -> None:
@@ -82,21 +82,48 @@ class ClusteringEvaluator(EmbeddingEvaluator):
             test_labels = [item.label for item in self.test_dataset]
 
         n_clusters = len(set(test_labels))
-        model_constructors: dict[str, Callable[[], ClusterMixin]] = {
-            "MiniBatchKMeans": lambda: MiniBatchKMeans(
-                n_clusters=n_clusters, n_init="auto", random_state=self.random_seed
-            ),
-            "AgglomerativeClustering": lambda: AgglomerativeClustering(n_clusters=n_clusters),
-            "BisectingKMeans": lambda: BisectingKMeans(n_clusters=n_clusters, random_state=self.random_seed),
-            "Birch": lambda: Birch(n_clusters=n_clusters),
-        }
 
         logger.info("Fitting clustering model...")
         val_results = {}
-        for model_name, model_constructor in model_constructors.items():
+        median_seeds = {}
+
+        random_model_constructors: dict[str, Callable[[int | None], ClusterMixin]] = {
+            "MiniBatchKMeans": lambda seed: MiniBatchKMeans(n_clusters=n_clusters, n_init="auto", random_state=seed),
+            "BisectingKMeans": lambda seed: BisectingKMeans(n_clusters=n_clusters, random_state=seed),
+        }
+        no_random_model_constructors: dict[str, Callable[[None], ClusterMixin]] = {
+            "AgglomerativeClustering": lambda seed: AgglomerativeClustering(n_clusters=n_clusters),
+            "Birch": lambda seed: Birch(n_clusters=n_clusters),
+        }
+        model_constructors = random_model_constructors | no_random_model_constructors
+
+        random_seeds = self.random_seed if isinstance(self.random_seed, list) else [self.random_seed]
+        for model_name, model_constructor in random_model_constructors.items():
+            val_seed_results = {}
+            for seed in random_seeds:
+                val_seed_results[seed], _ = self._evaluate_clustering_model(
+                    val_embeddings, val_labels, model_constructor(seed)
+                )
+
+            print(val_seed_results)
+
+            median_seed = sorted(
+                val_seed_results.items(),
+                key=lambda res: res[1][self.main_metric],
+                reverse=True,
+            )[len(random_seeds) // 2][0]
+
+            print(median_seed)
+
+            val_results[model_name] = val_seed_results[median_seed]
+            median_seeds[model_name] = median_seed
+
+        for model_name, model_constructor in no_random_model_constructors.items():
             val_results[model_name], _ = self._evaluate_clustering_model(
-                val_embeddings, val_labels, model_constructor()
+                val_embeddings, val_labels, model_constructor(None)
             )
+            median_seeds[model_name] = median_seed
+
         optimal_clustering_model_name = sorted(
             val_results.items(),
             key=lambda res: res[1][self.main_metric],
@@ -106,7 +133,7 @@ class ClusteringEvaluator(EmbeddingEvaluator):
         test_scores, test_predictions = self._evaluate_clustering_model(
             test_embeddings,
             test_labels,
-            model_constructors[optimal_clustering_model_name](),
+            model_constructors[optimal_clustering_model_name](median_seeds[optimal_clustering_model_name]),
         )
         test_results = {optimal_clustering_model_name: test_scores}
 
