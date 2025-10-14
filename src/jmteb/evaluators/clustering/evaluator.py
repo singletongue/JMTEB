@@ -105,15 +105,11 @@ class ClusteringEvaluator(EmbeddingEvaluator):
                     val_embeddings, val_labels, model_constructor(seed)
                 )
 
-            print(val_seed_results)
-
             median_seed = sorted(
                 val_seed_results.items(),
                 key=lambda res: res[1][self.main_metric],
                 reverse=True,
             )[len(random_seeds) // 2][0]
-
-            print(median_seed)
 
             val_results[model_name] = val_seed_results[median_seed]
             median_seeds[model_name] = median_seed
