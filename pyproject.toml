@@ -51,8 +51,5 @@ include = ["src/jmteb"]
 [tool.hatch.build.targets.wheel.sources]
 "src/jmteb" = "jmteb"
 
-[tool.black]
+[tool.ruff]
 line-length = 119
-
-[tool.isort]
-profile = "black"
